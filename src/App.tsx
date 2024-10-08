@@ -302,7 +302,7 @@ const App = () => {
                       ) ? (
                         <JsonView
                         value={JSON.parse(
-                          selectedLog.prompt[selectedLog.prompt.length - 1].content
+                          (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
                         )}
                         collapsed={4}
                         shortenTextAfterLength={2000}
@@ -312,14 +312,14 @@ const App = () => {
                       ) : (
                         <Textarea
                           value={
-                            selectedLog.prompt[selectedLog.prompt.length - 1].content
+                            (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
                           }
                           onChange={() => {}}
                           placeholder={`Last User Turn`}
                           className="mb-2 p-2 rounded resize-none text-white border-slate-700"
                                 rows={
-                                  selectedLog.prompt[selectedLog.prompt.length - 1].content.split("\n").length +
-                                  selectedLog.prompt[selectedLog.prompt.length - 1].content
+                                  (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content.split("\n").length +
+                                  (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
                                     .split("\n")
                                     .filter((line) => line.length > 150).length
                                 }
