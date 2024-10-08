@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
 import JsonView from "@uiw/react-json-view";
+import { vscodeTheme } from '@uiw/react-json-view/vscode';
 import { Textarea } from "./components/ui/textarea";
 
 const App = () => {
@@ -102,21 +103,30 @@ const App = () => {
   };
 
   const calculateTotalCost = (logs: Log[]) => {
-    const gpt_4o_mini_cost_per_million_tokens = 0.00015;
-    const gpt_4o_cost_per_million_tokens = 0.0003;
-    const gemini_2_flash_cost_per_million_tokens = 0.3;
+    // Pricing per million tokens (in USD)
+    const gpt_4o_input_cost = 2.5;
+    const gpt_4o_output_cost = 10;
+    const gpt_4o_mini_input_cost = 0.15; // Estimated based on the ratio of GPT-4o
+    const gpt_4o_mini_output_cost = 0.6; // Estimated based on the ratio of GPT-4o
+    const gemini_2_flash_input_cost = 0.07;
+    const gemini_2_flash_output_cost = 0.3;
 
     return logs.reduce((total, log) => {
+      const inputCost = log.prompt_tokens / 1_000_000;
+      const outputCost = log.completion_tokens / 1_000_000;
+
       if (log.model.includes("4o-mini")) {
-        return (
-          total + log.completion_tokens * gpt_4o_mini_cost_per_million_tokens
-        );
+        return total + 
+          (inputCost * gpt_4o_mini_input_cost) + 
+          (outputCost * gpt_4o_mini_output_cost);
       } else if (log.model.includes("4o")) {
-        return total + log.completion_tokens * gpt_4o_cost_per_million_tokens;
+        return total + 
+          (inputCost * gpt_4o_input_cost) + 
+          (outputCost * gpt_4o_output_cost);
       } else if (log.model.includes("gemini")) {
-        return (
-          total + log.completion_tokens * gemini_2_flash_cost_per_million_tokens
-        );
+        return total + 
+          ((inputCost + outputCost) * gemini_2_flash_input_cost) + 
+          ((inputCost + outputCost) * gemini_2_flash_output_cost);
       }
       return total;
     }, 0);
@@ -187,21 +197,21 @@ const App = () => {
   );
 
   return (
-    <div className="flex flex-col min-h-screen w-[100vw] px-[0.5vw]">
+    <div className="flex flex-col min-h-screen w-[100vw] bg-slate-900 text-white">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 flex flex-col space-y-2 p-4 bg-white border-b shadow-sm mb-4 px-[5vw]">
+      <div className="sticky top-0 z-10 flex flex-col space-y-2 p-4 bg-slate-800 border-b border-slate-700 shadow-sm mb-4 px-[5vw]">
         <div className="flex justify-between items-center w-full">
-          <h1 className="text-2xl font-bold mr-4">Agent Prompt Logs Viewer</h1>
+          <h1 className="text-2xl font-bold mr-4 text-white">Agent Prompt Logs Viewer</h1>
           <Button
             onClick={pasteFromClipboard}
             variant={"outline"}
-            className="ml-4 border-2 border-slate-400"
+            className="ml-4 border-2 border-slate-200 bg-slate-900 text-white hover:bg-slate-700 border-slate-400 :text-slate-100 hover:bg-slate-600"
           >
             <ClipboardCheck className="mr-2 h-4 w-4" /> Paste from Clipboard
           </Button>
         </div>
         {/* Meta Data */}
-        <div className="flex space-x-4">
+        <div className="flex space-x-4 text-slate-100">
           <div>
             Total Cost: ${data.total_cost_usd.toFixed(3)} / INR{" "}
             {Math.round(data.total_cost_usd * 85)}
@@ -211,7 +221,7 @@ const App = () => {
         {alert.show && (
           <Alert
             className={`mb-4 ${
-              alert.type === "success" ? "bg-green-100" : "bg-red-100"
+              alert.type === "success" ? "bg-green-800 text-green-100" : "bg-red-800 text-red-100"
             }`}
           >
             <AlertDescription>{alert.message}</AlertDescription>
@@ -222,22 +232,22 @@ const App = () => {
       {/* Main Content */}
       <div className="flex flex-1 pl-[1vw] pr-[5vw] w-full">
         {/* Sidebar with Event Names */}
-        <div className="w-[400px]  border-r pr-4 overflow-y-auto">
-          <h2 className="text-xl font-semibold mb-2">Events</h2>
+        <div className="w-[450px] border-r border-slate-800 pr-4 overflow-y-auto">
+          <h2 className="text-xl font-semibold mb-2 text-white">Events</h2>
           <ul>
             {sortedLogs.map((log, index) => (
               <li
                 key={index}
                 className={`cursor-pointer p-2 rounded ${
-                  selectedLog === log ? "bg-blue-200" : "hover:bg-gray-100"
+                  selectedLog === log ? "bg-blue-900" : "hover:bg-slate-700"
                 }`}
                 onClick={() => setSelectedLog(log)}
               >
                 <div className="flex flex-col">
-                  <span className="font-semibold text-sm truncate">
+                  <span className="font-semibold text-sm truncate text-slate-100">
                     {log.associated_event_name}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-slate-300">
                     {new Date(log.timestamp).toLocaleString()}
                   </span>
                 </div>
@@ -252,38 +262,38 @@ const App = () => {
             <div className="flex flex-col space-y-6">
               {/* Log Meta Data */}
               <div className="flex flex-wrap gap-3">
-                <Badge variant="secondary">{selectedLog.model}</Badge>
-                <Badge variant="secondary">{selectedLog.duration_ms} ms</Badge>
-                <Badge variant="secondary">
+                <Badge variant="secondary" className="bg-slate-600 text-white">{selectedLog.model}</Badge>
+                <Badge variant="secondary" className="bg-slate-600 text-white">{selectedLog.duration_ms} ms</Badge>
+                <Badge variant="secondary" className="bg-slate-600 text-white">
                   {selectedLog.prompt_tokens} prompt tokens
                 </Badge>
-                <Badge variant="secondary">
+                <Badge variant="secondary" className="bg-slate-600 text-white">
                   {selectedLog.completion_tokens} completion tokens
                 </Badge>
                 {selectedLog.error && (
-                  <Badge variant="destructive">
+                  <Badge variant="destructive" className="bg-red-800 text-red-100">
                     Error: {selectedLog.error}
                   </Badge>
                 )}
               </div>
 
               {/* Last User Turn */}
-              <div className="mt-6">
+              <div className="mt-6 text-white">
                 <div className="flex items-center mb-2">
-                  <h2 className="text-xl font-semibold">Last User Turn</h2>
+                  <h2 className="text-xl font-semibold text-white">Last User Turn</h2>
                   <div className="flex items-center space-x-2 ml-10">
                     <Switch
                       checked={showLastTurn}
                       onCheckedChange={setShowLastTurn}
                       id="show-last-turn"
                     />
-                    <label htmlFor="show-last-turn" style={{ paddingRight: 15 }}>
+                    <label htmlFor="show-last-turn" style={{ paddingRight: 15 }} className="text-slate-100">
                       {showLastTurn ? "Hide" : "Show"}
                     </label>
                   </div>
                 </div>
                 {showLastTurn && (
-                  <Card className="p-4">
+                  <Card className="py-3 bg-slate-800 border-slate-800">
                     {/* check if the last turn is a valid turn */}
                     {selectedLog.prompt[selectedLog.prompt.length - 1] !== "REDUCED_DUE_TO_SIZE_LIMIT" ? (
                     <CardContent>
@@ -296,8 +306,8 @@ const App = () => {
                         )}
                         collapsed={4}
                         shortenTextAfterLength={2000}
-                        style={{ fontSize: "1.15em" }} // Enhanced font size
-                          displayDataTypes={false}
+                        style={{ ...vscodeTheme, fontSize: "1.15em" }}
+                        displayDataTypes={false}
                         />
                       ) : (
                         <Textarea
@@ -306,7 +316,7 @@ const App = () => {
                           }
                           onChange={() => {}}
                           placeholder={`Last User Turn`}
-                          className="mb-2 p-2 rounded resize-none"
+                          className="mb-2 p-2 rounded resize-none text-white border-slate-700"
                                 rows={
                                   selectedLog.prompt[selectedLog.prompt.length - 1].content.split("\n").length +
                                   selectedLog.prompt[selectedLog.prompt.length - 1].content
@@ -315,11 +325,9 @@ const App = () => {
                                 }
                                 readOnly
                                 style={{
-                                  fontSize: "1.15em", // Enhanced font size
+                                  fontSize: "1.15em",
                                   lineHeight: "1.5",
-                                  fontFamily: "Verdana",
-                                  backgroundColor:
-                                    selectedLog.prompt[selectedLog.prompt.length - 1].role === "user" ? "#EBF8FF" : "#F0FFF4", // Light blue for user, light green for assistant
+                                  fontFamily: "Verdana",  
                                 }}
                         />
                       )}
@@ -334,15 +342,15 @@ const App = () => {
 
               {/* Main Response */}
               <div className="mt-6">
-                <h2 className="text-xl font-semibold mb-2">Response</h2>
-                <Card className="p-4">
+                <h2 className="text-xl font-semibold mb-2 text-white">Response</h2>
+                <Card className="p-4 bg-slate-800 border-slate-700">
                   <CardContent>
                     {isJSON(selectedLog.response) ? (
                       <JsonView
                         value={JSON.parse(selectedLog.response)}
                         collapsed={4}
                         shortenTextAfterLength={2000}
-                        style={{ fontSize: "1.15em" }} // Enhanced font size
+                        style={{ ...vscodeTheme, fontSize: "1.15em" }}
                         displayDataTypes={false}
                       />
                     ) : (
@@ -350,7 +358,6 @@ const App = () => {
                         className="whitespace-pre-wrap"
                         style={{
                           fontSize: "1.1em",
-                          backgroundColor: "#FFF7ED", // Light yellow background
                           padding: "1em",
                           borderRadius: "0.5em",
                         }}
@@ -373,31 +380,30 @@ const App = () => {
                           variant="outline"
                           className={`capitalize ${
                             turn.role === "user"
-                              ? "bg-blue-200 text-blue-900"
-                              : "bg-green-200 text-green-900"
+                              ? "bg-blue-900 text-blue-100"
+                              : "bg-green-900 text-green-100"
                           }`}
                         >
                           {turn.role}
                         </Badge>
                         {/* Content */}
                         <div
-                          className={`flex-1 p-4 rounded-lg shadow ${
-                            turn.role === "user" ? "bg-blue-50" : "bg-green-50"
-                          }`}
+                          className={`flex-1 rounded-lg shadow`}
                         >
                           {isJSON(turn.content) ? (
                             <JsonView
                               value={JSON.parse(turn.content)}
                               collapsed={4}
                               shortenTextAfterLength={2000}
-                              style={{ fontSize: "1.15em" }} // Enhanced font size
-                            />
+                              style={{ ...vscodeTheme, fontSize: "1.15em" }}
+                              displayDataTypes={false}
+                              />
                           ) : (
                             <Textarea
                               value={turn.content}
                               onChange={() => {}}
                               placeholder={`Turn ${idx + 1} - ${turn.role}`}
-                              className="mb-2 p-2 rounded resize-none"
+                              className="mb-2 p-2 rounded resize-none text-white border-slate-700"
                               rows={
                                 turn.content.split("\n").length +
                                 turn.content
@@ -406,11 +412,9 @@ const App = () => {
                               }
                               readOnly
                               style={{
-                                fontSize: "1.15em", // Enhanced font size
+                                fontSize: "1.15em",
                                 lineHeight: "1.5",
                                 fontFamily: "Verdana",
-                                backgroundColor:
-                                  turn.role === "user" ? "#EBF8FF" : "#F0FFF4", // Light blue for user, light green for assistant
                               }}
                             />
                           )}
@@ -426,7 +430,7 @@ const App = () => {
               </div>
             </div>
           ) : (
-            <div className="text-center text-gray-500">
+            <div className="text-center text-slate-400">
               Select an event to view details.
             </div>
           )}
