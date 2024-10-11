@@ -17,8 +17,6 @@ export const Highlight: React.FC<HighlightProps> = ({ text, object, searchTerm }
         shortenTextAfterLength={2000}
         style={{ ...vscodeTheme, fontSize: "1.15em" }}
         displayDataTypes={false}
-        highlightSearch={searchTerm}
-        highlightColor="#ffd700"
       />
     );
   }
