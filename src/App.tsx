@@ -1,14 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
+import { ScrollArea } from "./components/ui/scroll-area";
+import { Highlight } from "./components/Highlight"; // We'll create this component
 
 import JsonView from "@uiw/react-json-view";
 import { vscodeTheme } from '@uiw/react-json-view/vscode';
 import { Textarea } from "./components/ui/textarea";
+import EventTimeline from "./components/EventTimeline"; // Import the new component
+import { v4 as uuidv4 } from 'uuid'; // Import UUID
 
 const App = () => {
   interface Turn {
@@ -17,6 +23,7 @@ const App = () => {
   }
 
   interface Log {
+    id: string; // Add this line
     associated_event_name: string;
     timestamp: string;
     model: string;
@@ -35,6 +42,16 @@ const App = () => {
     total_duration_s: number;
   }
 
+  interface Event {
+    id: string;
+    name: string;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    type?: string;
+    details?: any;
+  }
+
   const [data, setData] = useState<Data>({
     logs: [],
     total_cost_usd: 0,
@@ -43,6 +60,10 @@ const App = () => {
   const [alert, setAlert] = useState({ show: false, message: "", type: "" });
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [showLastTurn, setShowLastTurn] = useState(true);
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [eventNameFilter, setEventNameFilter] = useState("");
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("jsonPromptData", JSON.stringify(data));
@@ -74,11 +95,13 @@ const App = () => {
       const prompt_array = JSON.parse(prompt);
 
       return {
+        id: uuidv4(), // Assign a unique UUID here
         model: model,
         prompt: prompt_array,
         response: response,
         duration_ms: parseInt(duration_ms),
-        associated_event_name: associated_event_name,
+        // associated_event_name: associated_event_name.replace("DOC_TO_SURVEY_", "").replace("_EXECUTOR_GENERATED", ""),
+        associated_event_name: associated_event_name.replace("DOC_TO_SURVEY_", ""),
         timestamp: timestamp,
         prompt_tokens: parseInt(prompt_token_count),
         completion_tokens: parseInt(completion_token_count),
@@ -88,6 +111,7 @@ const App = () => {
     } catch (error) {
       console.error(error);
       return {
+        id: uuidv4(), // Assign a unique UUID even in error case
         model: "",
         prompt: [],
         response: "",
@@ -133,11 +157,10 @@ const App = () => {
   };
 
   const calculateTotalDuration = (logs: Log[]) => {
-    return (
-      logs.reduce((total, log) => {
-        return total + log.duration_ms;
-      }, 0) / 1000
-    );
+    if (logs.length === 0) return 0;
+    const startTime = Math.min(...logs.map(log => new Date(log.timestamp).getTime()));
+    const endTime = Math.max(...logs.map(log => new Date(log.timestamp).getTime() + log.duration_ms));
+    return (endTime - startTime) / 1000;
   };
 
   const pasteFromClipboard = () => {
@@ -145,10 +168,13 @@ const App = () => {
       .readText()
       .then((text) => {
         try {
-          // for each line in the text, parse the log line and add it to the data
           const log_lines = text.split("\n");
           const logs = log_lines
-            .map(parseSingleLog)
+            .map((log_line, index) => {
+              const log = parseSingleLog(log_line);
+              log.id = index.toString(); // Assign a unique ID
+              return log;
+            })
             .filter((log) => log.model !== "");
           const total_cost = calculateTotalCost(logs);
           const total_duration = calculateTotalDuration(logs);
@@ -196,6 +222,77 @@ const App = () => {
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
 
+  // Update this function to use the correct timestamp format
+  const transformLogsToEvents = (logs: Log[]): Event[] => {
+    return logs.map((log) => ({
+      id: log.id, // Use the log's unique UUID
+      name: log.associated_event_name,
+      startTime: new Date(log.timestamp).getTime(),
+      endTime: new Date(log.timestamp).getTime() + log.duration_ms,
+      duration: log.duration_ms,
+      type: log.model,
+      details: {
+        promptTokens: log.prompt_tokens,
+        completionTokens: log.completion_tokens,
+        error: log.error,
+      },
+    }));
+  };
+
+  // Transform logs to events
+  const events = transformLogsToEvents(data.logs);
+
+  const handleEventClick = (event: Event) => {
+    const correspondingLog = data.logs.find(
+      (log) => log.id === event.id
+    );
+    if (correspondingLog) {
+      setSelectedLog(correspondingLog);
+    }
+  };
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const filteredLogs = useMemo(() => {
+    return sortedLogs.filter((log) => {
+      const matchesSearch =
+        searchTerm === "" ||
+        JSON.stringify(log).toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesEventName =
+        eventNameFilter === "" ||
+        log.associated_event_name.toLowerCase().includes(eventNameFilter.toLowerCase());
+      const matchesErrorFilter = !showErrorsOnly || log.error;
+      return matchesSearch && matchesEventName && matchesErrorFilter;
+    });
+  }, [sortedLogs, searchTerm, eventNameFilter, showErrorsOnly]);
+
+  const bottlenecks = useMemo(() => {
+    const threshold = data.total_duration_s * 0.1; // 10% of total duration
+    return filteredLogs.filter((log, index, array) => {
+      if (log.duration_ms <= threshold) return false;
+      
+      const logStart = new Date(log.timestamp).getTime();
+      const logEnd = logStart + log.duration_ms;
+      
+      // Check if there are any overlapping events
+      const hasOverlap = array.some((otherLog, otherIndex) => {
+        if (index === otherIndex) return false;
+        const otherStart = new Date(otherLog.timestamp).getTime();
+        const otherEnd = otherStart + otherLog.duration_ms;
+        return (otherStart < logEnd && otherEnd > logStart);
+      });
+      
+      return !hasOverlap;
+    });
+  }, [filteredLogs, data.total_duration_s]);
+
   return (
     <div className="flex flex-col min-h-screen w-[100vw] bg-slate-900 text-white">
       {/* Sticky Header */}
@@ -229,31 +326,90 @@ const App = () => {
         )}
       </div>
 
+      {/* Add the EventTimeline component */}
+      <div className="w-full p-4">
+        <h2 className="text-xl font-semibold mb-2 text-white">Event Timeline</h2>
+        <EventTimeline
+          events={events}
+          width={windowSize.width - 40}
+          height={400}
+          onEventClick={handleEventClick}
+          selectedEventId={selectedLog?.id} // Pass the selected event ID
+        />
+      </div>
+
       {/* Main Content */}
       <div className="flex flex-1 pl-[1vw] pr-[5vw] w-full">
-        {/* Sidebar with Event Names */}
-        <div className="w-[450px] border-r border-slate-800 pr-4 overflow-y-auto">
+        {/* Sidebar with Event Names and Filters */}
+        <div 
+          className="w-[450px] border-r border-slate-800 pr-4 overflow-y-auto"
+          style={{
+            position: 'sticky',
+            top: 'calc(100px + 20px)', // Adjust the top value to account for header and timeline heights
+            maxHeight: 'calc(100vh - 120px)', // Adjust the height accordingly
+          }}
+        >
+          <h2 className="text-xl font-semibold mb-2 text-white">Filters</h2>
+          <div className="space-y-4 mb-4">
+            <div>
+              <Label htmlFor="search" className="text-white">Search</Label>
+              <Input
+                id="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search in logs..."
+                className="bg-slate-800 text-white border-slate-700"
+              />
+            </div>
+            <div>
+              <Label htmlFor="eventFilter" className="text-white">Filter by Event Name</Label>
+              <Input
+                id="eventFilter"
+                value={eventNameFilter}
+                onChange={(e) => setEventNameFilter(e.target.value)}
+                placeholder="Filter events..."
+                className="bg-slate-800 text-white border-slate-700"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                checked={showErrorsOnly}
+                onCheckedChange={setShowErrorsOnly}
+                id="show-errors"
+                className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-slate-600"
+              />
+              <Label htmlFor="show-errors" className="text-white">Show Errors Only</Label>
+            </div>
+          </div>
           <h2 className="text-xl font-semibold mb-2 text-white">Events</h2>
-          <ul>
-            {sortedLogs.map((log, index) => (
-              <li
-                key={index}
-                className={`cursor-pointer p-2 rounded ${
-                  selectedLog === log ? "bg-blue-900" : "hover:bg-slate-700"
-                }`}
-                onClick={() => setSelectedLog(log)}
-              >
-                <div className="flex flex-col">
-                  <span className="font-semibold text-sm truncate text-slate-100">
-                    {log.associated_event_name}
-                  </span>
-                  <span className="text-xs text-slate-300">
-                    {new Date(log.timestamp).toLocaleString()}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ScrollArea className="h-[calc(100vh-300px)]">
+            <ul>
+              {filteredLogs.map((log, index) => (
+                <li
+                  key={index}
+                  className={`cursor-pointer p-2 rounded ${
+                    selectedLog === log ? "bg-blue-900" : "hover:bg-slate-700"
+                  } ${log.error ? "border-l-4 border-red-500" : ""}`}
+                  onClick={() => setSelectedLog(log)}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-semibold text-sm truncate text-slate-100">
+                      {log.associated_event_name}
+                    </span>
+                    <span className="text-xs text-slate-300">
+                      {new Date(log.timestamp).toLocaleString()}
+                    </span>
+                    {log.error && (
+                      <span className="text-xs text-red-400">Error</span>
+                    )}
+                    {bottlenecks.includes(log) && (
+                      <span className="text-xs text-yellow-400">Bottleneck</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
         </div>
 
         {/* Log Details */}
@@ -286,6 +442,7 @@ const App = () => {
                       checked={showLastTurn}
                       onCheckedChange={setShowLastTurn}
                       id="show-last-turn"
+                      className="data-[state=checked]:bg-blue-600 data-[state=unchecked]:bg-slate-600"
                     />
                     <label htmlFor="show-last-turn" style={{ paddingRight: 15 }} className="text-slate-100">
                       {showLastTurn ? "Hide" : "Show"}
@@ -294,44 +451,25 @@ const App = () => {
                 </div>
                 {showLastTurn && (
                   <Card className="py-3 bg-slate-800 border-slate-800">
-                    {/* check if the last turn is a valid turn */}
                     {selectedLog.prompt[selectedLog.prompt.length - 1] !== "REDUCED_DUE_TO_SIZE_LIMIT" ? (
-                    <CardContent>
-                      {isJSON(
-                        (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
-                      ) ? (
-                        <JsonView
-                        value={JSON.parse(
+                      <CardContent>
+                        {isJSON(
                           (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
+                        ) ? (
+                          <Highlight
+                            object={JSON.parse(
+                              (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
+                            )}
+                            searchTerm={searchTerm}
+                          />
+                        ) : (
+                          <Highlight
+                            text={(selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content}
+                            searchTerm={searchTerm}
+                          />
                         )}
-                        collapsed={4}
-                        shortenTextAfterLength={2000}
-                        style={{ ...vscodeTheme, fontSize: "1.15em" }}
-                        displayDataTypes={false}
-                        />
-                      ) : (
-                        <Textarea
-                          value={
-                            (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
-                          }
-                          onChange={() => {}}
-                          placeholder={`Last User Turn`}
-                          className="mb-2 p-2 rounded resize-none text-white border-slate-700"
-                                rows={
-                                  (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content.split("\n").length +
-                                  (selectedLog.prompt[selectedLog.prompt.length - 1] as Turn).content
-                                    .split("\n")
-                                    .filter((line) => line.length > 150).length
-                                }
-                                readOnly
-                                style={{
-                                  fontSize: "1.15em",
-                                  lineHeight: "1.5",
-                                  fontFamily: "Verdana",  
-                                }}
-                        />
-                      )}
-                    </CardContent>) : (
+                      </CardContent>
+                    ) : (
                       <div className="text-red-400 mb-2">
                         Turn was reduced due to size limit.
                       </div>
@@ -346,24 +484,15 @@ const App = () => {
                 <Card className="p-4 bg-slate-800 border-slate-700">
                   <CardContent>
                     {isJSON(selectedLog.response) ? (
-                      <JsonView
-                        value={JSON.parse(selectedLog.response)}
-                        collapsed={4}
-                        shortenTextAfterLength={2000}
-                        style={{ ...vscodeTheme, fontSize: "1.15em" }}
-                        displayDataTypes={false}
+                      <Highlight
+                        object={JSON.parse(selectedLog.response)}
+                        searchTerm={searchTerm}
                       />
                     ) : (
-                      <pre
-                        className="whitespace-pre-wrap"
-                        style={{
-                          fontSize: "1.1em",
-                          padding: "1em",
-                          borderRadius: "0.5em",
-                        }}
-                      >
-                        {selectedLog.response}
-                      </pre>
+                      <Highlight
+                        text={selectedLog.response}
+                        searchTerm={searchTerm}
+                      />
                     )}
                   </CardContent>
                 </Card>
