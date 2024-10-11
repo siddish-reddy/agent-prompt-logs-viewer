@@ -66,10 +66,6 @@ const App = () => {
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem("jsonPromptData", JSON.stringify(data));
-  }, [data]);
-
-  useEffect(() => {
     if (data.logs.length > 0 && !selectedLog) {
       setSelectedLog(data.logs[0]);
     }
